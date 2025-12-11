@@ -17,15 +17,19 @@ export async function GET(request: Request, { params }: { params: Promise<{ id: 
     }
 
     const data = await response.json()
+    
+    // Бэкенд возвращает {id, url, summary}, а не {item_id, url, summary}
+    // Используем data.id вместо data.item_id
+    console.log("[v0] Backend response data:", data) // Для отладки
 
     // Transform backend response to match frontend expectations
     return NextResponse.json({
-      id: data.item_id.toString(),
-      title: `Video ${data.item_id}`,
+      id: data.id.toString(),  
+      title: `Video ${data.id}`, 
       url: data.url || "",
       date: new Date().toISOString(),
       duration: "Unknown",
-      status: data.summary ? "completed" : "processing",
+      status: data.summary && data.summary.length > 0 && data.summary !== "Processing..." ? "completed" : "processing",
       summary: data.summary || "",
       transcription: "",
       keyPoints: [],

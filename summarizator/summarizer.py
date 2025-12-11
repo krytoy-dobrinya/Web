@@ -2,12 +2,12 @@ import os
 from pathlib import Path
 import yt_dlp as ytdl
 from moviepy import VideoFileClip
-import ffmpeg
+import torch
 from faster_whisper import WhisperModel
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
 
-DONWLOAD_DIR = os.environ.get("DOWNLOAD_DIR", "downloads")
+DOWNLOAD_DIR = os.environ.get("DOWNLOAD_DIR", "downloads")
 
 def download_video(url: str, out_dir: str = "downloads") -> Path:
     out_dir_p = Path(out_dir)
@@ -21,7 +21,6 @@ def download_video(url: str, out_dir: str = "downloads") -> Path:
     }
     with ytdl.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
-        # инфа содержит 'title' и 'ext'
         filename = ydl.prepare_filename(info)
     return Path(filename)
 
@@ -32,21 +31,15 @@ def extract_audio_to_wav(video_path: Path, out_wav: str = None, sr: int = 16000)
         out_wav = video_path.with_suffix('.wav')
     out_wav = Path(out_wav)
 
-    clip = VideoFileClip(str(video_path))
+    # MoviePy 2.x: VideoFileClip теперь принимает Path объект напрямую
+    clip = VideoFileClip(video_path)
     tmp_audio = video_path.with_suffix('.temp_audio.wav')
-    clip.audio.write_audiofile(str(tmp_audio), fps=sr)
+    
+    # MoviePy 2.x: write_audiofile не принимает logger параметр
+    clip.audio.write_audiofile(tmp_audio, fps=sr)
     clip.close()
-
-    stream = ffmpeg.input(str(tmp_audio))
-    stream = ffmpeg.output(stream, str(out_wav), ac=1, ar=sr)
-    ffmpeg.run(stream, overwrite_output=True, quiet=True)
-
-    try:
-        os.remove(tmp_audio)
-    except Exception:
-        pass
-
-    return out_wav
+    
+    return tmp_audio
 
 
 def transcribe_audio_wisper(audio_path: Path, model_size: str = 'small', language: str  = 'ru', task: str = 'transcribe') -> str:
@@ -64,7 +57,6 @@ def summarize_text(text):
     tokenizer = AutoTokenizer.from_pretrained("LaciaStudio/Lacia_sum_small_v1")
     model = AutoModelForSeq2SeqLM.from_pretrained("LaciaStudio/Lacia_sum_small_v1")
 
-    # "summarize: " prefix
     input_text = "summarize: " + text
     inputs = tokenizer(input_text, return_tensors="pt", max_length=512, truncation=True)
 
@@ -72,10 +64,48 @@ def summarize_text(text):
     summary = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
 
     return summary
-    
+
+
 def summarize_pipeline(task_id: int, url: str):
-    video_path = download_video(url)
-    audio_path = extract_audio_to_wav(video_path)
-    transcript = transcribe_audio_wisper(audio_path)
-    summary = summarize_text(transcript)
-    print(f'Summary {task_id} for {url}: {summary}')
+    """Основная функция пайплайна - возвращает результат, НЕ обновляет БД здесь"""
+    try:
+        print(f"[SUMMARIZER] Starting pipeline for task {task_id}")
+        
+        # 1. Скачивание видео
+        print(f"[SUMMARIZER] Downloading video from: {url}")
+        video_path = download_video(url)
+        print(f"[SUMMARIZER] Downloaded to: {video_path}")
+        
+        # 2. Извлечение аудио
+        print(f"[SUMMARIZER] Extracting audio...")
+        audio_path = extract_audio_to_wav(video_path)
+        print(f"[SUMMARIZER] Audio saved to: {audio_path}")
+        
+        # 3. Транскрипция
+        print(f"[SUMMARIZER] Transcribing audio...")
+        transcript = transcribe_audio_wisper(audio_path)
+        print(f"[SUMMARIZER] Transcription length: {len(transcript)} chars")
+        
+        # 4. Суммаризация
+        print(f"[SUMMARIZER] Summarizing text...")
+        summary = summarize_text(transcript)
+        print(f"[SUMMARIZER] Summary generated, length: {len(summary)} chars")
+        
+        # 5. Очистка временных файлов (опционально)
+        try:
+            if video_path.exists():
+                os.remove(video_path)
+                print(f"[SUMMARIZER] Removed video file: {video_path}")
+            if audio_path.exists():
+                os.remove(audio_path)
+                print(f"[SUMMARIZER] Removed audio file: {audio_path}")
+        except Exception as cleanup_error:
+            print(f"[SUMMARIZER] Cleanup warning: {cleanup_error}")
+        
+        return summary
+        
+    except Exception as e:
+        print(f"[SUMMARIZER] ERROR in pipeline: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return f"Ошибка обработки: {str(e)}"

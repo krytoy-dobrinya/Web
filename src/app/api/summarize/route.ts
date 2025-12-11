@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     const id = Date.now()
 
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 30000) // 30 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 300000) // 30 second timeout
 
     try {
       console.log("[v0] API: Calling Python backend at:", `${pythonBackendUrl}/create`)

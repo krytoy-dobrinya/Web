@@ -6,7 +6,7 @@ export async function GET() {
     console.log("[v0] History API: Fetching from:", `${pythonBackendUrl}/get-all-items`)
 
     const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), 10000) // 10 second timeout
+    const timeoutId = setTimeout(() => controller.abort(), 60000) // 10 second timeout
 
     try {
       const response = await fetch(`${pythonBackendUrl}/get-all-items`, {
